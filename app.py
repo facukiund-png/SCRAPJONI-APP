@@ -21,7 +21,7 @@ except:
 
 st.set_page_config(page_title="ScrapJoni Ultimate", page_icon="🚀", layout="wide")
 
-# --- 2. ESTILOS VISUALES PRO ---
+# --- 2. ESTILOS VISUALES ---
 st.markdown("""
     <style>
     .stApp { background-color: #f8fafc; color: #1e293b; }
@@ -50,13 +50,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. FUNCIONES DE AYUDA ---
+# --- 3. FUNCIONES AUXILIARES ---
 def clean_phone_and_generate_wa(phone_text):
     if not phone_text or phone_text in ["No data", "Modo Rápido", "No encontrado"]:
         return None, None
     raw_nums = re.sub(r'\D', '', phone_text)
     wa_link = None
-    if len(raw_nums) == 10:
+    # Lógica para Argentina
+    if len(raw_nums) == 10: # Ej: 11 1234 5678 -> 54911...
         wa_link = f"https://wa.me/549{raw_nums}"
     elif len(raw_nums) >= 11 and raw_nums.startswith("54"):
         wa_link = f"https://wa.me/{raw_nums}"
@@ -66,8 +67,6 @@ def extract_coords_from_url(url):
     if not url or "google" not in url: return None, None
     match = re.search(r'@([-.\d]+),([-.\d]+)', url)
     if match: return float(match.group(1)), float(match.group(2))
-    match2 = re.search(r'!3d([-.\d]+)!4d([-.\d]+)', url)
-    if match2: return float(match2.group(1)), float(match2.group(2))
     return None, None
 
 # --- 4. BASE DE DATOS GEOGRÁFICA ---
@@ -116,20 +115,19 @@ LOCATION_DATA = {
     }
 }
 
-# --- 5. MOTOR DE SCRAPING BLINDADO ---
+# --- 5. MOTOR DE SCRAPING (CORREGIDO) ---
 def get_google_maps_data(search_query, max_results=10, modo_full=False):
-    data = []
-    
-    # 1. Creamos los elementos UI AQUÍ para evitar UnboundLocalError
-    # Usamos placeholders vacíos que llenaremos si todo va bien
+    # Variables de UI inicializadas ANTES de cualquier lógica para evitar errores
     progress_bar = st.progress(0)
     status_text = st.empty()
     
+    data = []
     browser = None
     
     with sync_playwright() as p:
         try:
-            status_text.text("Iniciando navegador en la nube...")
+            status_text.text("Iniciando navegador...")
+            # Lanzamiento con argumentos anti-bot
             browser = p.chromium.launch(
                 headless=True,
                 args=[
@@ -137,49 +135,57 @@ def get_google_maps_data(search_query, max_results=10, modo_full=False):
                     '--disable-setuid-sandbox', 
                     '--disable-dev-shm-usage', 
                     '--disable-gpu', 
-                    '--blink-settings=imagesEnabled=false'
+                    '--blink-settings=imagesEnabled=false',
+                    '--disable-blink-features=AutomationControlled'
                 ]
             )
-            page = browser.new_page()
-            
-            # Aumentamos timeout para conexiones lentas
-            page.set_default_timeout(60000)
-            
+            context = browser.new_context(
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            )
+            page = context.new_page()
+            page.set_default_timeout(45000) # Timeout más largo
+
+            # Navegación
             status_text.text("Conectando con Google Maps...")
-            # Navegamos
-            page.goto("https://www.google.com/maps")
-            
-            # Verificación de carga
+            page.goto("https://www.google.com/maps", wait_until='domcontentloaded')
+
+            # Manejo de Popups de Consentimiento (común en servidores cloud)
             try:
-                page.wait_for_selector("input#searchboxinput", state="visible", timeout=30000)
+                # Intenta buscar botones de "Aceptar todo" o "Rechazar todo" si aparecen
+                page.locator("button[aria-label='Aceptar todo']").click(timeout=3000)
             except:
-                status_text.error("Error: Google Maps tardó demasiado en cargar o pidió Captcha.")
+                pass
+
+            # Búsqueda
+            try:
+                page.wait_for_selector("input#searchboxinput", state="visible")
+                page.fill("input#searchboxinput", search_query)
+                page.keyboard.press("Enter")
+            except Exception as e:
+                status_text.error("No se pudo encontrar la barra de búsqueda. Google puede estar bloqueando la IP.")
                 return pd.DataFrame()
 
-            page.fill("input#searchboxinput", search_query)
-            page.keyboard.press("Enter")
-            
             # Esperar resultados
             try:
+                # Esperamos el feed de resultados
                 page.wait_for_selector('div[role="feed"]', timeout=20000)
             except:
-                # Intento de debug: ¿Qué título tiene la página?
-                titulo = page.title()
-                status_text.warning(f"No se cargó la lista. Título de página: {titulo}. Intenta de nuevo.")
-                return pd.DataFrame() 
-            
-            # --- LÓGICA DE SCROLL ---
+                status_text.warning("No cargó la lista de resultados. Puede que no haya locales en esa zona o requiera verificación.")
+                return pd.DataFrame()
+
+            # --- SCROLL LOGIC ---
             feed_selector = 'div[role="feed"]'
             items_found = 0
             retries = 0
             
-            status_text.text(f"Buscando {max_results} resultados...")
-            
-            while items_found < max_results and retries < 20:
-                # Scroll
+            status_text.text(f"Escaneando mapa en busca de {max_results} locales...")
+
+            while items_found < max_results and retries < 15:
+                # Scroll hacia abajo
                 page.evaluate(f"document.querySelector('{feed_selector}').scrollTo(0, document.querySelector('{feed_selector}').scrollHeight)")
-                time.sleep(1) # Pausa para carga
+                time.sleep(1) # Espera técnica para carga
                 
+                # Contar elementos cargados
                 current_count = page.locator('div[role="feed"] > div > div[jsaction]').count()
                 
                 if current_count == items_found:
@@ -188,55 +194,39 @@ def get_google_maps_data(search_query, max_results=10, modo_full=False):
                     retries = 0
                     items_found = current_count
                 
-                # Feedback
+                # Feedback UI
                 prog = min(current_count / max_results, 1.0)
                 progress_bar.progress(prog)
-                status_text.text(f"🔎 Encontrados: {current_count} locales...")
+                status_text.caption(f"🔎 Encontrados: {current_count}...")
                 
                 if current_count >= max_results:
                     break
-
+            
             # --- EXTRACCIÓN ---
-            status_text.text("Procesando datos finales...")
+            status_text.text("Procesando información...")
             elements = page.locator('div[role="feed"] > div > div[jsaction]').all()
             limit = min(len(elements), max_results)
-            
-            if not modo_full:
-                # MODO RÁPIDO
-                for i in range(limit):
-                    try:
-                        text = elements[i].inner_text().split('\n')
-                        if len(text) < 2 or "Anuncio" in text[0]: continue
-                        
-                        link = ""
-                        try: link = elements[i].locator("a").first.get_attribute("href")
-                        except: pass
-                        
-                        data.append({
-                            "Nombre": text[0],
-                            "Rating": text[1] if len(text)>1 else "-",
-                            "Dirección": "N/A (Modo Rápido)",
-                            "Teléfono": "N/A (Modo Rápido)",
-                            "Link": link
-                        })
-                    except: pass
-            else:
-                # MODO FULL
-                for i in range(limit):
-                    try:
+
+            # Iteramos sobre los elementos encontrados
+            for i in range(limit):
+                try:
+                    # REFRESCAR ELEMENTO (Clave para evitar errores de elemento 'detached')
+                    if modo_full:
+                        # MODO FULL: Click y detalle
                         current = page.locator('div[role="feed"] > div > div[jsaction]').nth(i)
                         nombre_raw = current.inner_text().split('\n')[0]
                         if "Anuncio" in nombre_raw: continue
                         
                         current.click()
                         
-                        # Espera inteligente (si no aparece en 2s, asumimos que no hay)
-                        try: page.wait_for_selector('button[data-item-id^="address"]', timeout=2000)
+                        # Esperar carga de panel lateral
+                        try: page.wait_for_selector('div[role="main"]', timeout=2000)
                         except: pass
                         
                         direccion, telefono, rating = "No data", "No data", "-"
                         link = page.url
                         
+                        # Intentar extraer datos
                         try: direccion = page.locator('button[data-item-id^="address"]').first.get_attribute("aria-label").replace("Dirección: ", "")
                         except: pass
                         try: telefono = page.locator('button[data-item-id^="phone"]').first.get_attribute("aria-label").replace("Teléfono: ", "")
@@ -252,17 +242,38 @@ def get_google_maps_data(search_query, max_results=10, modo_full=False):
                             "Link": link
                         })
                         
-                        # Volver atrás
+                        # Intentar volver atrás para el siguiente
                         try: page.locator('button[aria-label="Atrás"]').click()
                         except: pass
-                    except: continue
+                    
+                    else:
+                        # MODO RÁPIDO: Solo texto visible
+                        text = elements[i].inner_text().split('\n')
+                        if len(text) < 2 or "Anuncio" in text[0]: continue
+                        
+                        link = ""
+                        try: link = elements[i].locator("a").first.get_attribute("href")
+                        except: pass
+
+                        data.append({
+                            "Nombre": text[0],
+                            "Rating": text[1] if len(text) > 1 else "-",
+                            "Dirección": "N/A (Modo Rápido)",
+                            "Teléfono": "N/A (Modo Rápido)",
+                            "Link": link
+                        })
+
+                except Exception as e:
+                    # Si falla uno, seguimos con el siguiente
+                    continue
 
         except Exception as e:
-            st.error(f"Ocurrió un error técnico: {e}")
+            status_text.error(f"Error técnico durante el scraping: {e}")
+        
         finally:
             if browser:
                 browser.close()
-            # Limpiamos UI al terminar
+            # Limpiamos UI
             try:
                 progress_bar.empty()
                 status_text.empty()
@@ -271,10 +282,10 @@ def get_google_maps_data(search_query, max_results=10, modo_full=False):
             
     return pd.DataFrame(data)
 
-# --- 6. INTERFAZ DE USUARIO ---
+# --- 6. INTERFAZ PRINCIPAL ---
 
 st.markdown("<h1 style='text-align: center;'>🚀 ScrapJoni <span style='color:#2563eb'>Ultimate</span></h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #64748b; margin-top: -15px;'>Suite de Prospección y Geolocalización Comercial</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #64748b; margin-top: -15px;'>Suite de Prospección Comercial</p>", unsafe_allow_html=True)
 
 with st.container():
     st.subheader("🛠️ Parámetros de Búsqueda")
@@ -304,7 +315,7 @@ with st.container():
 
     btn_buscar = st.button(f"🔍 INICIAR BÚSQUEDA ({cantidad} REGISTROS)")
 
-# --- 7. LÓGICA DE PROCESAMIENTO ---
+# --- 7. EJECUCIÓN ---
 
 if 'data' not in st.session_state:
     st.session_state.data = None
@@ -313,41 +324,37 @@ if btn_buscar and rubro:
     loc_final = localidad if localidad != "Todas" else partido
     query = f"{rubro} en {loc_final}, {partido}, {region}, Argentina"
     
-    with st.spinner(f"Ejecutando ScrapJoni... Por favor espera..."):
+    with st.spinner(f"Ejecutando ScrapJoni..."):
         df_result = get_google_maps_data(query, cantidad, es_full)
         
         if not df_result.empty:
+            # Procesar datos
             df_result[['Teléfono', 'Link WhatsApp']] = df_result['Teléfono'].apply(lambda x: pd.Series(clean_phone_and_generate_wa(x)))
             coords = df_result['Link'].apply(extract_coords_from_url)
             df_result['lat'] = coords.apply(lambda x: x[0])
             df_result['lon'] = coords.apply(lambda x: x[1])
             df_result.insert(0, "Seleccionar", False)
+            
             st.session_state.data = df_result
-            st.success(f"¡Éxito! Se descargaron {len(df_result)} resultados.")
+            st.success(f"¡Éxito! Se encontraron {len(df_result)} resultados.")
         else:
-            st.warning("No se encontraron resultados válidos. Intenta reducir la cantidad o cambiar de zona.")
+            st.warning("No se encontraron resultados. Intenta con una zona más amplia o reduce la cantidad.")
 
-# --- 8. VISUALIZACIÓN Y FILTROS ---
+# --- 8. VISUALIZACIÓN ---
 
 if st.session_state.data is not None:
     df = st.session_state.data.copy()
     st.markdown("---")
     
     with st.sidebar:
-        st.header("🔍 Filtros de Resultados")
+        st.header("🔍 Filtros")
         solo_con_tel = st.checkbox("Solo con Teléfono")
         if solo_con_tel:
-            df = df[df["Teléfono"] != "No data"]
-            df = df[df["Teléfono"] != "No encontrado"]
+            df = df[~df["Teléfono"].isin(["No data", "No encontrado", "N/A (Modo Rápido)"])]
         
-        try:
-            df['RatingNum'] = pd.to_numeric(df['Rating'].astype(str).str.replace(',','.'), errors='coerce').fillna(0)
-            min_rating = st.slider("Rating Mínimo", 0.0, 5.0, 0.0, 0.5)
-            df = df[df['RatingNum'] >= min_rating]
-        except: pass
-        st.metric("Resultados Filtrados", len(df))
+        st.metric("Resultados Visibles", len(df))
 
-    tab1, tab2, tab3 = st.tabs(["📋 Tabla de Datos", "🗺️ Mapa Interactivo", "📊 Estadísticas"])
+    tab1, tab2, tab3 = st.tabs(["📋 Tabla", "🗺️ Mapa", "📊 Stats"])
     
     with tab1:
         edited_df = st.data_editor(
@@ -356,35 +363,34 @@ if st.session_state.data is not None:
                 "Seleccionar": st.column_config.CheckboxColumn("Sel.", default=False),
                 "Link": st.column_config.LinkColumn("Maps"),
                 "Link WhatsApp": st.column_config.LinkColumn("WhatsApp"),
-                "lat": None, "lon": None, "RatingNum": None
+                "lat": None, "lon": None
             },
             hide_index=True, use_container_width=True, height=500
         )
-        sel_rows = edited_df[edited_df["Seleccionar"] == True]
+        
         c1, c2 = st.columns(2)
         with c1:
-            csv = edited_df.drop(columns=["Seleccionar", "lat", "lon", "RatingNum"], errors='ignore').to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Descargar CSV Filtrado", csv, "scrapjoni_leads.csv", "text/csv")
+            csv = edited_df.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Descargar CSV", csv, "leads.csv", "text/csv")
         with c2:
+            sel_rows = edited_df[edited_df["Seleccionar"] == True]
             if len(sel_rows) >= 2:
                 destinos = []
                 for _, row in sel_rows.iterrows():
                     val = row['Dirección'] if row['Dirección'] not in ["No data", "N/A (Modo Rápido)"] else f"{row['Nombre']} {partido}"
                     destinos.append(urllib.parse.quote(val))
-                url_ruta = f"https://www.google.com/maps/dir/{'/'.join(destinos[:10])}"
-                st.link_button("🗺️ Ver Ruta de Viaje (Seleccionados)", url_ruta)
+                url = f"https://www.google.com/maps/dir/{'/'.join(destinos[:10])}"
+                st.link_button("🗺️ Ruta Maps", url)
 
     with tab2:
         map_data = df.dropna(subset=['lat', 'lon'])
         if not map_data.empty:
             st.map(map_data, latitude='lat', longitude='lon', size=20, color='#2563eb')
-            st.caption(f"Mostrando {len(map_data)} locales geolocalizados.")
         else:
-            st.warning("No se pudieron extraer coordenadas suficientes para el mapa.")
+            st.info("Sin coordenadas suficientes para el mapa.")
 
     with tab3:
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total Locales", len(df))
+        m1, m2 = st.columns(2)
+        m1.metric("Total", len(df))
         con_tel = len(df[~df['Teléfono'].isin(["No data", "No encontrado", "N/A (Modo Rápido)"])])
         m2.metric("Con Teléfono", con_tel)
-        m3.metric("Promedio Rating", f"{df['RatingNum'].mean():.1f} ⭐")
