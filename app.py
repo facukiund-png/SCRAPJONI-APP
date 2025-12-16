@@ -21,45 +21,27 @@ except:
 
 st.set_page_config(page_title="ScrapJoni Ultimate", page_icon="🚀", layout="wide")
 
-# --- 2. ESTILOS VISUALES PRO (MODO CLARO) ---
+# --- 2. ESTILOS VISUALES PRO ---
 st.markdown("""
     <style>
-    /* Base */
     .stApp { background-color: #f8fafc; color: #1e293b; }
-    
-    /* Headers */
     h1, h2, h3 { color: #0f172a !important; font-weight: 800 !important; }
-    
-    /* Cards y Contenedores */
     div[data-testid="stExpander"], div.stContainer, div[data-testid="stMetric"] {
-        background-color: #ffffff; 
-        border-radius: 12px;
-        border: 1px solid #e2e8f0; 
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); 
-        padding: 15px;
+        background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; 
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); padding: 15px;
     }
-    
-    /* Inputs */
     .stTextInput input, .stSelectbox div[data-baseweb="select"] > div {
-        background-color: #f1f5f9 !important; 
-        color: #334155 !important;
-        border: 1px solid #cbd5e1 !important; 
-        border-radius: 8px;
+        background-color: #f1f5f9 !important; color: #334155 !important;
+        border: 1px solid #cbd5e1 !important; border-radius: 8px;
     }
-    
-    /* Botón Principal - Gradiente Moderno */
     div.stButton > button {
         background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-        color: white; border: none; padding: 0.8rem 2rem;
-        font-size: 1rem; font-weight: bold; border-radius: 10px; width: 100%;
-        transition: transform 0.2s;
+        color: white; border: none; padding: 0.8rem 2rem; font-size: 1rem; 
+        font-weight: bold; border-radius: 10px; width: 100%; transition: transform 0.2s;
     }
     div.stButton > button:hover {
-        transform: scale(1.02);
-        box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3);
+        transform: scale(1.02); box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3);
     }
-    
-    /* Badges de Tiempo */
     .time-badge {
         background-color: #eff6ff; color: #1d4ed8; padding: 6px 12px; 
         border-radius: 20px; font-weight: 600; font-size: 0.85em;
@@ -68,46 +50,27 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. FUNCIONES DE AYUDA (INTELIGENCIA) ---
-
+# --- 3. FUNCIONES DE AYUDA ---
 def clean_phone_and_generate_wa(phone_text):
-    """Limpia el teléfono y genera link de WhatsApp si es móvil."""
     if not phone_text or phone_text in ["No data", "Modo Rápido", "No encontrado"]:
         return None, None
-        
-    # Limpiar todo lo que no sea digito
     raw_nums = re.sub(r'\D', '', phone_text)
-    
     wa_link = None
-    
-    # Lógica básica para Argentina (se puede adaptar)
-    # Si tiene 10 dígitos (ej 11 1234 5678) asumimos que falta el 549
     if len(raw_nums) == 10:
         wa_link = f"https://wa.me/549{raw_nums}"
-    # Si tiene 12 o 13 dígitos y empieza con 54, asumimos que está ok
     elif len(raw_nums) >= 11 and raw_nums.startswith("54"):
         wa_link = f"https://wa.me/{raw_nums}"
-    
     return phone_text, wa_link
 
 def extract_coords_from_url(url):
-    """Intenta sacar latitud y longitud de la URL de Google Maps."""
-    if not url or "google" not in url:
-        return None, None
-    
-    # Patrón común: @-34.6037,-58.3816
+    if not url or "google" not in url: return None, None
     match = re.search(r'@([-.\d]+),([-.\d]+)', url)
-    if match:
-        return float(match.group(1)), float(match.group(2))
-    
-    # Patrón alternativo: !3d-34.6037!4d-58.3816
+    if match: return float(match.group(1)), float(match.group(2))
     match2 = re.search(r'!3d([-.\d]+)!4d([-.\d]+)', url)
-    if match2:
-        return float(match2.group(1)), float(match2.group(2))
-        
+    if match2: return float(match2.group(1)), float(match2.group(2))
     return None, None
 
-# --- 4. BASE DE DATOS GEOGRÁFICA (COMPLETA) ---
+# --- 4. BASE DE DATOS GEOGRÁFICA ---
 LOCATION_DATA = {
     "CABA (Ciudad Autónoma)": {
         "Comuna 1 (Centro)": ["Retiro", "San Nicolás", "San Telmo", "Monserrat", "Constitución"],
@@ -138,7 +101,7 @@ LOCATION_DATA = {
     "GBA Zona Oeste": {
         "La Matanza": ["San Justo", "Ramos Mejía", "Lomas del Mirador", "Laferrere", "Virrey del Pino"],
         "Morón": ["Morón", "Castelar", "Haedo", "Palomar"],
-        "Tres de Febrero": ["Caseros", "Ciudadela", "Santos Lugares"],
+        "Tres de Febrero": ["Caseros", "Ciudadela", "Santos Lugares", "Saenz Peña"],
         "Merlo": ["Merlo", "Padua"],
         "Moreno": ["Moreno", "Paso del Rey"],
         "Ituzaingó": ["Ituzaingó"]
@@ -157,36 +120,46 @@ LOCATION_DATA = {
 def get_google_maps_data(search_query, max_results=10, modo_full=False):
     data = []
     
+    # --- CORRECCIÓN DEL ERROR ---
+    # Inicializamos las variables de UI AQUÍ afuera del try/catch
+    # para que siempre existan, pase lo que pase.
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--blink-settings=imagesEnabled=false']
-        )
+        try:
+            browser = p.chromium.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--blink-settings=imagesEnabled=false']
+            )
+        except Exception as e:
+            st.error(f"Error iniciando navegador: {e}")
+            return pd.DataFrame()
+
         page = browser.new_page()
         
         try:
             # 1. Búsqueda
-            page.goto("https://www.google.com/maps", timeout=30000)
+            status_text.text("Conectando con Google Maps...")
+            page.goto("https://www.google.com/maps", timeout=45000) # Aumenté el timeout
             page.wait_for_selector("input#searchboxinput", state="visible")
             page.fill("input#searchboxinput", search_query)
             page.keyboard.press("Enter")
             
             try:
-                page.wait_for_selector('div[role="feed"]', timeout=10000)
+                page.wait_for_selector('div[role="feed"]', timeout=15000)
             except:
-                return pd.DataFrame() # No cargó feed
+                status_text.warning("No se cargó la lista de resultados. Intentando de nuevo...")
+                return pd.DataFrame() 
             
-            # 2. Scroll Logic (Hasta llegar a max_results)
+            # 2. Scroll Logic
             feed_selector = 'div[role="feed"]'
             items_found = 0
             retries = 0
             
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
             while items_found < max_results and retries < 15:
                 page.evaluate(f"document.querySelector('{feed_selector}').scrollTo(0, document.querySelector('{feed_selector}').scrollHeight)")
-                time.sleep(0.8) # Scroll rápido
+                time.sleep(0.8)
                 
                 current_count = page.locator('div[role="feed"] > div > div[jsaction]').count()
                 
@@ -209,16 +182,14 @@ def get_google_maps_data(search_query, max_results=10, modo_full=False):
             elements = page.locator('div[role="feed"] > div > div[jsaction]').all()
             limit = min(len(elements), max_results)
             
-            status_text.text("⛏️ Procesando datos...")
+            status_text.text("⛏️ Procesando datos encontrados...")
             
             if not modo_full:
-                # --- MODO RÁPIDO (Iteración rápida) ---
+                # --- MODO RÁPIDO ---
                 for i in range(limit):
                     try:
                         text = elements[i].inner_text().split('\n')
                         if len(text) < 2 or "Anuncio" in text[0]: continue
-                        
-                        # Intentar link
                         link = ""
                         try: link = elements[i].locator("a").first.get_attribute("href")
                         except: pass
@@ -232,30 +203,24 @@ def get_google_maps_data(search_query, max_results=10, modo_full=False):
                         })
                     except: pass
             else:
-                # --- MODO FULL (Entrando a cada uno) ---
+                # --- MODO FULL ---
                 for i in range(limit):
                     try:
-                        # Refrescar elemento
                         current = page.locator('div[role="feed"] > div > div[jsaction]').nth(i)
                         nombre_raw = current.inner_text().split('\n')[0]
                         if "Anuncio" in nombre_raw: continue
                         
                         current.click()
-                        
-                        # Esperar info (optimizado)
                         try: page.wait_for_selector('button[data-item-id^="address"]', timeout=2500)
                         except: pass
                         
                         direccion, telefono, rating = "No data", "No data", "-"
                         link = page.url
                         
-                        # Scrapeo seguro
                         try: direccion = page.locator('button[data-item-id^="address"]').first.get_attribute("aria-label").replace("Dirección: ", "")
                         except: pass
-                        
                         try: telefono = page.locator('button[data-item-id^="phone"]').first.get_attribute("aria-label").replace("Teléfono: ", "")
                         except: pass
-                        
                         try: rating = page.locator('div[jsaction^="pane.rating"]').first.inner_text().split('\n')[0]
                         except: pass
                         
@@ -266,17 +231,15 @@ def get_google_maps_data(search_query, max_results=10, modo_full=False):
                             "Teléfono": telefono,
                             "Link": link
                         })
-                        
-                        # Volver
                         try: page.locator('button[aria-label="Atrás"]').click()
                         except: pass
-                        
                     except: continue
 
         except Exception as e:
-            st.error(f"Error técnico: {e}")
+            st.error(f"Error durante el proceso: {e}")
         finally:
             browser.close()
+            # Ahora es seguro limpiar porque las creamos al principio
             progress_bar.empty()
             status_text.empty()
             
@@ -287,10 +250,8 @@ def get_google_maps_data(search_query, max_results=10, modo_full=False):
 st.markdown("<h1 style='text-align: center;'>🚀 ScrapJoni <span style='color:#2563eb'>Ultimate</span></h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #64748b; margin-top: -15px;'>Suite de Prospección y Geolocalización Comercial</p>", unsafe_allow_html=True)
 
-# --- CONFIGURACIÓN SIDEBAR + MAIN ---
 with st.container():
     st.subheader("🛠️ Parámetros de Búsqueda")
-    
     c1, c2 = st.columns([2, 1])
     with c1:
         rubro = st.text_input("¿Qué rubro buscas?", placeholder="Ej: Pizzería, Odontología, Gimnasio")
@@ -298,35 +259,22 @@ with st.container():
         modo = st.radio("Modo de Rastreo", ["⚡ Turbo (Solo Lista)", "🐢 Full (Con Teléfono)"], horizontal=True)
 
     c3, c4, c5 = st.columns(3)
-    with c3:
-        region = st.selectbox("Región", list(LOCATION_DATA.keys()))
-    with c4:
-        partido = st.selectbox("Partido / Zona", list(LOCATION_DATA[region].keys()))
-    with c5:
-        localidad = st.selectbox("Localidad", ["Todas"] + LOCATION_DATA[region][partido])
+    with c3: region = st.selectbox("Región", list(LOCATION_DATA.keys()))
+    with c4: partido = st.selectbox("Partido / Zona", list(LOCATION_DATA[region].keys()))
+    with c5: localidad = st.selectbox("Localidad", ["Todas"] + LOCATION_DATA[region][partido])
 
-    # Slider Inteligente
     st.write("")
     col_slide, col_badge = st.columns([3, 1])
     with col_slide:
         cantidad = st.slider("Objetivo de Resultados (Máx 1000)", 10, 1000, 20)
     
     with col_badge:
-        # Cálculo de tiempo
         es_full = "Full" in modo
         factor = 5.0 if es_full else 0.2
         secs = cantidad * factor
-        
         time_str = f"{int(secs)} seg" if secs < 60 else f"{math.ceil(secs/60)} min"
         icon_t = "⚡" if not es_full else "🐢"
-        
-        st.markdown(f"""
-            <div style="margin-top: 10px;">
-                <div class="time-badge">
-                    {icon_t} Estimado: {time_str}
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"<div style='margin-top: 10px;'><div class='time-badge'>{icon_t} Estimado: {time_str}</div></div>", unsafe_allow_html=True)
 
     btn_buscar = st.button(f"🔍 INICIAR BÚSQUEDA ({cantidad} REGISTROS)")
 
@@ -343,21 +291,11 @@ if btn_buscar and rubro:
         df_result = get_google_maps_data(query, cantidad, es_full)
         
         if not df_result.empty:
-            # --- POST-PROCESAMIENTO ---
-            # 1. WhatsApp
-            df_result[['Teléfono', 'Link WhatsApp']] = df_result['Teléfono'].apply(
-                lambda x: pd.Series(clean_phone_and_generate_wa(x))
-            )
-            
-            # 2. Latitud/Longitud (Para mapa)
-            # Solo funciona bien si tenemos el link específico (Modo Full suele dar mejores links)
+            df_result[['Teléfono', 'Link WhatsApp']] = df_result['Teléfono'].apply(lambda x: pd.Series(clean_phone_and_generate_wa(x)))
             coords = df_result['Link'].apply(extract_coords_from_url)
             df_result['lat'] = coords.apply(lambda x: x[0])
             df_result['lon'] = coords.apply(lambda x: x[1])
-            
-            # 3. Checkbox de selección inicial
             df_result.insert(0, "Seleccionar", False)
-            
             st.session_state.data = df_result
             st.success(f"¡Éxito! Se descargaron {len(df_result)} resultados.")
         else:
@@ -367,59 +305,42 @@ if btn_buscar and rubro:
 
 if st.session_state.data is not None:
     df = st.session_state.data.copy()
-    
     st.markdown("---")
     
-    # --- BARRA DE FILTROS LATERAL (DINÁMICA) ---
     with st.sidebar:
         st.header("🔍 Filtros de Resultados")
-        
-        # Filtro de Teléfono
         solo_con_tel = st.checkbox("Solo con Teléfono")
         if solo_con_tel:
             df = df[df["Teléfono"] != "No data"]
             df = df[df["Teléfono"] != "No encontrado"]
         
-        # Filtro de Rating
         try:
-            # Convertir rating a numero forzoso
             df['RatingNum'] = pd.to_numeric(df['Rating'].astype(str).str.replace(',','.'), errors='coerce').fillna(0)
             min_rating = st.slider("Rating Mínimo", 0.0, 5.0, 0.0, 0.5)
             df = df[df['RatingNum'] >= min_rating]
-        except:
-            pass
-        
+        except: pass
         st.metric("Resultados Filtrados", len(df))
 
-    # --- PESTAÑAS PRINCIPALES ---
     tab1, tab2, tab3 = st.tabs(["📋 Tabla de Datos", "🗺️ Mapa Interactivo", "📊 Estadísticas"])
     
     with tab1:
-        # DATA EDITOR
         edited_df = st.data_editor(
             df,
             column_config={
                 "Seleccionar": st.column_config.CheckboxColumn("Sel.", default=False),
                 "Link": st.column_config.LinkColumn("Maps"),
                 "Link WhatsApp": st.column_config.LinkColumn("WhatsApp"),
-                "lat": None, "lon": None, "RatingNum": None # Ocultar columnas técnicas
+                "lat": None, "lon": None, "RatingNum": None
             },
-            hide_index=True,
-            use_container_width=True,
-            height=500
+            hide_index=True, use_container_width=True, height=500
         )
-        
-        # BOTONES DE ACCIÓN TABLA
         sel_rows = edited_df[edited_df["Seleccionar"] == True]
-        
         c1, c2 = st.columns(2)
         with c1:
             csv = edited_df.drop(columns=["Seleccionar", "lat", "lon", "RatingNum"], errors='ignore').to_csv(index=False).encode('utf-8')
             st.download_button("📥 Descargar CSV Filtrado", csv, "scrapjoni_leads.csv", "text/csv")
-        
         with c2:
             if len(sel_rows) >= 2:
-                # Ruta Maps
                 destinos = []
                 for _, row in sel_rows.iterrows():
                     val = row['Dirección'] if row['Dirección'] not in ["No data", "N/A (Modo Rápido)"] else f"{row['Nombre']} {partido}"
@@ -428,25 +349,16 @@ if st.session_state.data is not None:
                 st.link_button("🗺️ Ver Ruta de Viaje (Seleccionados)", url_ruta)
 
     with tab2:
-        # MAPA
-        # Filtramos los que no tienen coordenadas válidas
         map_data = df.dropna(subset=['lat', 'lon'])
-        
         if not map_data.empty:
             st.map(map_data, latitude='lat', longitude='lon', size=20, color='#2563eb')
             st.caption(f"Mostrando {len(map_data)} locales geolocalizados.")
         else:
-            st.warning("No se pudieron extraer coordenadas suficientes para el mapa. Intenta usar el 'Modo Full' para mejorar la precisión geográfica.")
+            st.warning("No se pudieron extraer coordenadas suficientes para el mapa.")
 
     with tab3:
-        # METRICAS
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Locales", len(df))
         con_tel = len(df[~df['Teléfono'].isin(["No data", "No encontrado", "N/A (Modo Rápido)"])])
         m2.metric("Con Teléfono", con_tel)
         m3.metric("Promedio Rating", f"{df['RatingNum'].mean():.1f} ⭐")
-
-else:
-    # Footer
-    st.markdown("<br><br><br>", unsafe_allow_html=True)
-    st.markdown("<div style='text-align: center; color: #cbd5e1;'>ScrapJoni v5.0 Ultimate • Powered by Playwright</div>", unsafe_allow_html=True)
