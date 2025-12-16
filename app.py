@@ -4,6 +4,7 @@ from playwright.sync_api import sync_playwright
 import time
 import urllib.parse
 import subprocess
+import math
 
 # --- 1. INSTALACIÓN AUTOMÁTICA EN LA NUBE ---
 def install_playwright():
@@ -17,55 +18,34 @@ try:
 except:
     pass
 
-st.set_page_config(page_title="ScrapJoni V3", page_icon="📍", layout="wide")
+st.set_page_config(page_title="ScrapJoni V4", page_icon="📍", layout="wide")
 
 # --- 2. ESTILOS VISUALES (MODO CLARO / LIGHT) ---
 st.markdown("""
     <style>
-    /* Forzar tema claro y limpio */
-    .stApp {
-        background-color: #f8fafc; /* Gris muy muy claro casi blanco */
-        color: #1e293b; /* Texto gris oscuro */
-    }
-    
-    /* Encabezados */
-    h1, h2, h3 {
-        color: #0f172a !important;
-        font-weight: 700 !important;
-    }
-    
-    /* Contenedores y Cards */
+    .stApp { background-color: #f8fafc; color: #1e293b; }
+    h1, h2, h3 { color: #0f172a !important; font-weight: 700 !important; }
     div[data-testid="stExpander"], div.stContainer {
-        background-color: #ffffff;
-        border-radius: 12px;
-        border: 1px solid #e2e8f0;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        padding: 20px;
+        background-color: #ffffff; border-radius: 12px;
+        border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); padding: 20px;
     }
-    
-    /* Inputs y Selects */
     .stTextInput input, .stSelectbox div[data-baseweb="select"] > div {
-        background-color: #ffffff !important;
-        color: #334155 !important;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 8px;
+        background-color: #ffffff !important; color: #334155 !important;
+        border: 1px solid #cbd5e1 !important; border-radius: 8px;
     }
-    
-    /* Botón Principal */
     div.stButton > button {
         background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-        color: white;
-        border: none;
-        padding: 0.8rem 2rem;
-        font-size: 1.1rem;
-        font-weight: bold;
-        border-radius: 8px;
-        box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.3);
-        width: 100%;
+        color: white; border: none; padding: 0.8rem 2rem;
+        font-size: 1.1rem; font-weight: bold; border-radius: 8px; width: 100%;
     }
     div.stButton > button:hover {
         background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
-        box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.4);
+    }
+    /* Estilo para el tiempo estimado */
+    .time-badge {
+        background-color: #dbeafe; color: #1e40af;
+        padding: 5px 10px; border-radius: 6px; font-weight: bold; font-size: 0.9em;
+        border: 1px solid #93c5fd; display: inline-block; margin-top: 5px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -92,142 +72,134 @@ LOCATION_DATA = {
     "GBA Zona Norte": {
         "Vicente López": ["Vicente López", "Olivos", "Florida", "La Lucila", "Villa Martelli", "Munro", "Carapachay"],
         "San Isidro": ["San Isidro", "Acassuso", "Martínez", "Beccar", "Boulogne", "Villa Adelina"],
-        "Tigre": ["Tigre", "Don Torcuato", "General Pacheco", "El Talar", "Benavídez", "Nordelta", "Rincón de Milberg"],
+        "Tigre": ["Tigre", "Don Torcuato", "General Pacheco", "El Talar", "Benavídez", "Nordelta"],
         "San Fernando": ["San Fernando", "Victoria", "Virreyes"],
-        "San Martín": ["San Martín", "Villa Ballester", "San Andrés", "José León Suárez", "Villa Maipú"],
+        "San Martín": ["San Martín", "Villa Ballester", "San Andrés", "José León Suárez"],
         "Pilar": ["Pilar", "Del Viso", "Derqui", "Fátima"],
-        "Escobar": ["Belén de Escobar", "Garín", "Ingeniero Maschwitz", "Maquinista Savio"]
+        "Escobar": ["Belén de Escobar", "Garín", "Ingeniero Maschwitz"]
     },
     "GBA Zona Sur": {
-        "Avellaneda": ["Avellaneda", "Sarandí", "Villa Domínico", "Wilde", "Gerli", "Piñeyro", "Dock Sud"],
-        "Lanús": ["Lanús Oeste", "Lanús Este", "Remedios de Escalada", "Monte Chingolo", "Valentín Alsina"],
-        "Lomas de Zamora": ["Lomas de Zamora", "Banfield", "Temperley", "Turdera", "Llavallol", "Fiorito"],
-        "Quilmes": ["Quilmes", "Bernal", "Don Bosco", "Ezpeleta", "San Francisco Solano", "Villa La Florida"],
-        "Almirante Brown": ["Adrogué", "Burzaco", "Longchamps", "Rafael Calzada", "Claypole", "Glew"],
+        "Avellaneda": ["Avellaneda", "Sarandí", "Villa Domínico", "Wilde", "Gerli"],
+        "Lanús": ["Lanús Oeste", "Lanús Este", "Remedios de Escalada", "Monte Chingolo"],
+        "Lomas de Zamora": ["Lomas de Zamora", "Banfield", "Temperley", "Turdera", "Llavallol"],
+        "Quilmes": ["Quilmes", "Bernal", "Don Bosco", "Ezpeleta", "San Francisco Solano"],
+        "Almirante Brown": ["Adrogué", "Burzaco", "Longchamps", "Rafael Calzada"],
         "Esteban Echeverría": ["Monte Grande", "Luis Guillón", "El Jagüel", "Canning"],
-        "Ezeiza": ["Ezeiza", "Tristán Suárez", "La Unión"],
-        "Berazategui": ["Berazategui", "Hudson", "Plátanos", "Ranelagh"]
+        "Ezeiza": ["Ezeiza", "Tristán Suárez"],
+        "Berazategui": ["Berazategui", "Hudson"]
     },
     "GBA Zona Oeste": {
-        "La Matanza": ["San Justo", "Ramos Mejía", "Lomas del Mirador", "Tapiales", "Isidro Casanova", "Laferrere", "Virrey del Pino", "González Catán", "Aldo Bonzi"],
+        "La Matanza": ["San Justo", "Ramos Mejía", "Lomas del Mirador", "Tapiales", "Isidro Casanova", "Laferrere", "Virrey del Pino"],
         "Morón": ["Morón", "Castelar", "Haedo", "El Palomar", "Villa Sarmiento"],
-        "Tres de Febrero": ["Caseros", "Ciudadela", "Santos Lugares", "Sáenz Peña", "Martín Coronado", "Loma Hermosa", "Pablo Podestá"],
-        "Merlo": ["Merlo", "San Antonio de Padua", "Libertad", "Mariano Acosta"],
-        "Moreno": ["Moreno", "Paso del Rey", "Trujui", "La Reja"],
-        "Hurlingham": ["Hurlingham", "William Morris", "Villa Tesei"],
+        "Tres de Febrero": ["Caseros", "Ciudadela", "Santos Lugares", "Sáenz Peña", "Martín Coronado"],
+        "Merlo": ["Merlo", "San Antonio de Padua", "Libertad"],
+        "Moreno": ["Moreno", "Paso del Rey"],
+        "Hurlingham": ["Hurlingham", "William Morris"],
         "Ituzaingó": ["Ituzaingó", "Villa Udaondo"]
     }
 }
 
-# --- 4. MOTOR DE SCRAPING (LÓGICA DOBLE: RÁPIDA vs FULL) ---
+# --- 4. MOTOR DE SCRAPING OPTIMIZADO PARA 1000 ITEMS ---
 def get_google_maps_data(search_query, max_results=10, modo_full=False):
     data = []
     
     with sync_playwright() as p:
-        # Lanzar navegador
         browser = p.chromium.launch(
             headless=True,
             args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
         )
-        context = browser.new_context(
-            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        )
+        context = browser.new_context(user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
         page = context.new_page()
         
         try:
-            # 1. Búsqueda Inicial
+            # Navegar
             page.goto("https://www.google.com/maps", timeout=60000)
             page.wait_for_selector("input#searchboxinput", state="visible")
             page.fill("input#searchboxinput", search_query)
             page.keyboard.press("Enter")
-            
-            # Esperar carga de lista
             page.wait_for_selector('div[role="feed"]', timeout=20000)
             
-            # Scroll para cargar resultados
+            # --- SCROLL INFINITO HASTA LLEGAR AL OBJETIVO ---
             feed_selector = 'div[role="feed"]'
-            for _ in range(5):
+            items_found = 0
+            retries = 0
+            
+            # Bucle de carga (Scrollear hasta tener suficientes elementos visuales)
+            while items_found < max_results and retries < 20:
+                # Scrollear al fondo
                 page.evaluate(f"document.querySelector('{feed_selector}').scrollTo(0, document.querySelector('{feed_selector}').scrollHeight)")
-                time.sleep(2)
+                time.sleep(1.5) # Esperar carga
+                
+                # Contar cuántos tenemos cargados en el DOM
+                current_items = page.locator('div[role="feed"] > div > div[jsaction]').count()
+                
+                if current_items == items_found:
+                    retries += 1 # No cargó nada nuevo
+                else:
+                    retries = 0 # Cargó nuevos
+                    items_found = current_items
+                
+                # Salir si ya tenemos suficientes (con margen de error)
+                if items_found >= max_results:
+                    break
 
-            # Obtener elementos de la lista
-            # Google Maps a veces cambia la estructura, usamos el selector más común para items
+            # Obtener elementos finales
             items = page.locator('div[role="feed"] > div > div[jsaction]').all()
             
-            # --- MODO RÁPIDO (Solo lista) ---
+            # --- MODO RÁPIDO (LISTA) ---
             if not modo_full:
                 count = 0
                 for item in items:
                     if count >= max_results: break
                     try:
-                        text_content = item.inner_text().split('\n')
-                        if len(text_content) < 2 or "Anuncio" in text_content[0]: continue
+                        text = item.inner_text().split('\n')
+                        if len(text) < 2 or "Anuncio" in text[0]: continue
                         
                         link = ""
-                        try:
-                            link = item.locator("a").first.get_attribute("href")
+                        try: link = item.locator("a").first.get_attribute("href")
                         except: pass
 
                         data.append({
                             "Seleccionar": False,
-                            "Nombre": text_content[0],
-                            "Dirección": "Ver en Mapa (Modo Rápido)",
-                            "Teléfono": "No disponible (Modo Rápido)",
-                            "Rating": text_content[1] if len(text_content) > 1 else "-",
+                            "Nombre": text[0],
+                            "Dirección": "Modo Rápido",
+                            "Teléfono": "Modo Rápido",
+                            "Rating": text[1] if len(text) > 1 else "-",
                             "Link": link
                         })
                         count += 1
                     except: continue
 
-            # --- MODO FULL (Click en cada uno) ---
+            # --- MODO FULL (DETAIL) ---
             else:
-                # Este modo es más lento porque entra a la ficha
                 count = 0
-                # Re-seleccionamos locators para iterar
-                # Nota: Al hacer click el DOM cambia, es complejo en headless.
-                # Estrategia: Iteramos por índice.
-                
-                total_items_visual = len(items)
-                limit = min(total_items_visual, max_results)
+                limit = min(len(items), max_results)
 
                 for i in range(limit):
                     try:
-                        # Re-capturar la lista porque el DOM se refresca
+                        # Refrescar lista (DOM inestable)
                         current_items = page.locator('div[role="feed"] > div > div[jsaction]').all()
                         if i >= len(current_items): break
                         
                         target = current_items[i]
-                        
-                        # Extraer nombre antes del click
                         nombre_raw = target.inner_text().split('\n')[0]
                         if "Anuncio" in nombre_raw: continue
 
-                        # CLICK para ver detalles
+                        # CLICK
                         target.click()
-                        time.sleep(3) # Esperar que cargue el panel lateral
+                        time.sleep(2) # Pausa breve para carga
                         
-                        # Extraer datos del panel de detalle
-                        direccion = "No encontrada"
-                        telefono = "No encontrado"
-                        rating = "-"
-                        link = page.url
+                        direccion, telefono, rating, link = "No encontrada", "No encontrado", "-", page.url
                         
-                        # Intentar sacar dirección (busca el icono de pin o texto)
                         try:
-                            # Buscamos botones que contengan el dato
-                            all_buttons = page.locator('button[data-item-id^="address"]', ).all()
-                            if all_buttons:
-                                direccion = all_buttons[0].get_attribute("aria-label").replace("Dirección: ", "")
+                            # Estrategia rápida de extracción por aria-label
+                            direccion = page.locator('button[data-item-id^="address"]').first.get_attribute("aria-label").replace("Dirección: ", "")
                         except: pass
                         
-                        # Intentar sacar teléfono (busca icono de teléfono)
                         try:
-                            phone_buttons = page.locator('button[data-item-id^="phone"]').all()
-                            if phone_buttons:
-                                telefono = phone_buttons[0].get_attribute("aria-label").replace("Teléfono: ", "")
+                            telefono = page.locator('button[data-item-id^="phone"]').first.get_attribute("aria-label").replace("Teléfono: ", "")
                         except: pass
 
-                        # Intentar rating
                         try:
                             rating = page.locator('div[jsaction^="pane.rating"]').first.inner_text().split('\n')[0]
                         except: pass
@@ -242,164 +214,120 @@ def get_google_maps_data(search_query, max_results=10, modo_full=False):
                         })
                         count += 1
                         
-                        # VOLVER ATRÁS (Click en la X o botón atrás)
-                        # A veces es mejor buscar el botón "Atrás"
+                        # Volver atrás si hay botón
                         try:
-                            back_btn = page.locator('button[aria-label="Atrás"]')
-                            if back_btn.count() > 0:
-                                back_btn.click()
-                            else:
-                                # Si no hay botón atrás, cerramos búsqueda (riesgoso)
-                                pass
+                            page.locator('button[aria-label="Atrás"]').click()
                         except: pass
                         
-                        time.sleep(1) # Esperar que vuelva la lista
-                        
-                    except Exception as e:
-                        print(f"Error en item {i}: {e}")
+                    except:
                         continue
-
+                        
         except Exception as e:
-            print(f"Error general: {e}")
+            print(f"Error: {e}")
         finally:
             browser.close()
             
     return pd.DataFrame(data)
 
+# --- 5. INTERFAZ ---
 
-# --- 5. INTERFAZ DE USUARIO ---
+st.markdown("<h1 style='text-align: center; color: #1e40af;'>📍 ScrapJoni <span style='color: #64748b; font-size:0.6em'>Unlimited</span></h1>", unsafe_allow_html=True)
 
-st.markdown("<h1 style='text-align: center; color: #1e40af; margin-bottom: 30px;'>📍 ScrapJoni <span style='font-size: 0.6em; color: #64748b;'>Online Pro</span></h1>", unsafe_allow_html=True)
-
-# Container Principal de Configuración
 with st.container():
-    st.subheader("⚙️ Configura tu Búsqueda")
-    
+    st.subheader("⚙️ Configuración")
     col_a, col_b = st.columns([2, 1])
     
     with col_a:
-        # INPUT 1: Rubro
-        rubro = st.text_input("1. ¿Qué rubro buscas?", placeholder="Ej: Pizzería, Odontología, Ferretería")
+        rubro = st.text_input("1. ¿Qué rubro buscas?", placeholder="Ej: Pizzería, Odontología")
     
     with col_b:
-        # INPUT DE MODO (TOGGLE)
         st.markdown("##### Tipo de Rastreo")
-        modo_busqueda = st.radio(
-            "Selecciona precisión:",
-            ["⚡ Rápido (Sin Tél/Dir)", "🐢 Full (Con Tél/Dir Exacto)"],
-            index=0,
-            help="El modo Full tarda más porque entra a cada ficha para copiar el teléfono."
-        )
+        modo_busqueda = st.radio("Precisión:", ["⚡ Rápido", "🐢 Full (Con Tél/Dir)"], index=0)
 
-    # SEPARADOR
     st.markdown("---")
 
     col1, col2, col3 = st.columns(3)
-    
     with col1:
-        # INPUT 2: Región
-        region = st.selectbox("2. Zona / Región", list(LOCATION_DATA.keys()))
-    
+        region = st.selectbox("2. Región", list(LOCATION_DATA.keys()))
     with col2:
-        # INPUT 3: Partido
-        partidos_opc = list(LOCATION_DATA[region].keys())
-        partido = st.selectbox("3. Partido / Comuna", partidos_opc)
-        
+        partido = st.selectbox("3. Partido", list(LOCATION_DATA[region].keys()))
     with col3:
-        # INPUT 4: Localidad
-        localidades_opc = LOCATION_DATA[region][partido]
-        localidad = st.selectbox("4. Localidad", ["Todas las localidades"] + localidades_opc)
+        localidad = st.selectbox("4. Localidad", ["Todas"] + LOCATION_DATA[region][partido])
 
-    # SLIDER CANTIDAD
-    cantidad = st.slider("Cantidad de resultados a extraer:", 5, 20, 10, help="En modo Full, recomendamos máximo 10 para no saturar.")
+    # --- SLIDER CON CÁLCULO DE TIEMPO ---
+    st.markdown("##### Cantidad de Resultados (Máx 1000)")
+    
+    cantidad = st.slider("Mueve la barra para ajustar:", 10, 1000, 20)
+    
+    # Lógica de cálculo de tiempo
+    es_full = "Full" in modo_busqueda
+    if es_full:
+        # Estimamos 6 segundos por item en modo Full (Click + Copy + Back)
+        segundos = cantidad * 6
+    else:
+        # Estimamos 0.2 segundos por item en modo Rápido
+        segundos = cantidad * 0.2
+    
+    # Formateo de tiempo
+    if segundos < 60:
+        tiempo_texto = f"{int(segundos)} segundos"
+    elif segundos < 3600:
+        tiempo_texto = f"{math.ceil(segundos/60)} minutos"
+    else:
+        horas = segundos / 3600
+        tiempo_texto = f"{round(horas, 1)} horas"
+
+    # Color del badge según la duración
+    color_badge = "#dbeafe" # Azul claro
+    if segundos > 300: color_badge = "#fef3c7" # Amarillo (5 mins+)
+    if segundos > 1800: color_badge = "#fee2e2" # Rojo (30 mins+)
+    
+    st.markdown(f"""
+        <div style="background-color: {color_badge}; color: #1e293b; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; display: inline-block;">
+            ⏱️ Tiempo estimado: <strong>{tiempo_texto}</strong> <br>
+            <span style="font-size: 0.8em; opacity: 0.8">Modo: {'Lento y detallado' if es_full else 'Velocidad máxima'}</span>
+        </div>
+    """, unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
-    
-    # BOTÓN DE ACCIÓN
-    btn_buscar = st.button(f"🔍 BUSCAR AHORA ({'FULL' if 'Full' in modo_busqueda else 'RÁPIDO'})")
+    btn_buscar = st.button(f"🔍 INICIAR BÚSQUEDA ({cantidad} REGISTROS)")
 
-
-# --- 6. RESULTADOS ---
+# --- 6. EJECUCIÓN ---
 
 if 'df_resultados' not in st.session_state:
     st.session_state.df_resultados = None
 
 if btn_buscar and rubro:
-    # Preparar Query
-    loc_final = localidad if localidad != "Todas las localidades" else partido
+    loc_final = localidad if localidad != "Todas" else partido
     query = f"{rubro} en {loc_final}, {partido}, {region}, Argentina"
     
-    es_full = "Full" in modo_busqueda
-    
-    msg_espera = "⏳ Extrayendo teléfonos y direcciones exactas... Esto puede tomar 1-2 minutos." if es_full else "🚀 Escaneando listado rápido..."
-    
-    with st.spinner(msg_espera):
+    with st.spinner(f"Trabajando... Extrayendo {cantidad} locales. Tiempo aprox: {tiempo_texto}"):
         df = get_google_maps_data(query, max_results=cantidad, modo_full=es_full)
         
         if not df.empty:
             st.session_state.df_resultados = df
-            st.balloons()
-            st.success(f"¡Éxito! Se encontraron {len(df)} resultados.")
+            st.success(f"¡Listo! Se descargaron {len(df)} locales.")
         else:
-            st.error("No se encontraron resultados o Google bloqueó la conexión. Intenta bajar la cantidad o esperar unos minutos.")
+            st.error("Google Maps no arrojó resultados o pidió verificación. Intenta con menos cantidad.")
 
-# MOSTRAR TABLA Y ACCIONES
 if st.session_state.df_resultados is not None:
     df = st.session_state.df_resultados
     
     st.markdown("### 📋 Resultados")
+    edited_df = st.data_editor(df, column_config={"Seleccionar": st.column_config.CheckboxColumn("Sel.", default=False), "Link": st.column_config.LinkColumn("Mapa")}, hide_index=True, use_container_width=True, height=500)
     
-    # Tabla Interactiva
-    edited_df = st.data_editor(
-        df,
-        column_config={
-            "Seleccionar": st.column_config.CheckboxColumn("Sel.", default=False),
-            "Link": st.column_config.LinkColumn("Mapa"),
-        },
-        hide_index=True,
-        use_container_width=True,
-        height=500
-    )
-    
-    seleccionados = edited_df[edited_df["Seleccionar"] == True]
-    
-    st.markdown("---")
-    st.subheader("📥 Exportar Datos")
+    sel = edited_df[edited_df["Seleccionar"] == True]
     
     c1, c2 = st.columns(2)
-    
     with c1:
-        # CSV FULL
         csv = edited_df.drop(columns=["Seleccionar"]).to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="Descargar Listado Completo (CSV)",
-            data=csv,
-            file_name="scrapjoni_resultados.csv",
-            mime="text/csv"
-        )
-    
+        st.download_button("📥 Descargar Todo (CSV)", csv, "scrapjoni_full.csv", "text/csv")
     with c2:
-        # BOTÓN DE RUTA
-        if len(seleccionados) >= 2:
-            st.write(f"Has seleccionado {len(seleccionados)} puntos para la ruta.")
-            
-            # Construir ruta
-            # Si tenemos direccion exacta (Modo Full), la usamos. Si no, Nombre + Partido
+        if len(sel) >= 2:
+            # Ruta optimizada (si hay direccion usa direccion, sino nombre)
             destinos = []
-            for _, row in seleccionados.iterrows():
-                if "No encontrada" not in row["Dirección"] and "Modo Rápido" not in row["Dirección"]:
-                    q = urllib.parse.quote(f"{row['Dirección']}, {partido}")
-                else:
-                    q = urllib.parse.quote(f"{row['Nombre']} {partido}")
-                destinos.append(q)
-            
-            url_maps = f"https://www.google.com/maps/dir/{'/'.join(destinos)}"
-            
-            st.link_button("🗺️ Ver Ruta Optimizada en Google Maps", url_maps)
-        else:
-            st.info("Selecciona al menos 2 casillas arriba para generar el mapa de ruta.")
-
-else:
-    # Espaciador visual si no hay datos
-    st.markdown("<br><br><br>", unsafe_allow_html=True)
-    st.markdown("<div style='text-align:center; color:#94a3b8;'>ScrapJoni V3.0 - Designed by Suipa Agency</div>", unsafe_allow_html=True)
+            for _, row in sel.iterrows():
+                val = row['Dirección'] if "No encontrada" not in row['Dirección'] and "Rápido" not in row['Dirección'] else f"{row['Nombre']} {partido}"
+                destinos.append(urllib.parse.quote(val))
+            url = f"https://www.google.com/maps/dir/{'/'.join(destinos[:10])}" # Limite 10 para URL
+            st.link_button("🗺️ Ver Ruta (Máx 10)", url)
